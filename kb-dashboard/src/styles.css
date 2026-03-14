@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #1C1C1E;
+  color: #fff;
+}
+
+/* react-grid-layout overrides */
+.react-grid-item.react-grid-placeholder {
+  background: rgba(10, 132, 255, 0.15) !important;
+  border-radius: 12px !important;
+  border: 1px dashed rgba(10, 132, 255, 0.4) !important;
+}
+
+.react-resizable-handle {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.react-grid-item:hover .react-resizable-handle {
+  opacity: 1;
+}
+
+.react-resizable-handle::after {
+  border-color: rgba(255,255,255,0.2) !important;
+}
+
+/* Panel hover: show hide button */
+.panel-wrapper:hover .panel-hide-btn {
+  opacity: 1 !important;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.2);
+}
+
+/* Smooth transitions */
+button {
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+button:active {
+  opacity: 0.7;
+}
