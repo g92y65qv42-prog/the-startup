@@ -129,6 +129,16 @@ function runMigrations(db: Database.Database): void {
           created_at TEXT NOT NULL
         );
       `
+    },
+    {
+      version: 3,
+      sql: `
+        CREATE TABLE integration_config (
+          provider TEXT PRIMARY KEY,
+          client_id TEXT NOT NULL,
+          client_secret TEXT
+        );
+      `
     }
   ]
 

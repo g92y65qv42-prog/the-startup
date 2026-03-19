@@ -5,8 +5,9 @@ import { createPomodoroSlice, PomodoroSlice } from './pomodoro.slice'
 import { createGradesSlice, GradesSlice } from './grades.slice'
 import { createNewsSlice, NewsSlice } from './news.slice'
 import { createTranscriptionSlice, TranscriptionSlice } from './transcription.slice'
+import { createIntegrationsSlice, IntegrationsSlice } from './integrations.slice'
 
-export type AppStore = PanelsSlice & TasksSlice & PomodoroSlice & GradesSlice & NewsSlice & TranscriptionSlice
+export type AppStore = PanelsSlice & TasksSlice & PomodoroSlice & GradesSlice & NewsSlice & TranscriptionSlice & IntegrationsSlice
 
 export const useStore = create<AppStore>()((...a) => ({
   ...createPanelsSlice(...a),
@@ -15,4 +16,5 @@ export const useStore = create<AppStore>()((...a) => ({
   ...createGradesSlice(...a),
   ...createNewsSlice(...a),
   ...createTranscriptionSlice(...a),
+  ...createIntegrationsSlice(...a),
 }))

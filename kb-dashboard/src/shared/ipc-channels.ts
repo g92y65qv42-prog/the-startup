@@ -52,9 +52,18 @@ export const IPC = {
 
   // Integrations
   INTEGRATION_STATUS: 'integration:status',
+  INTEGRATION_GET_CONFIG: 'integration:get-config',
+  INTEGRATION_SET_CONFIG: 'integration:set-config',
   INTEGRATION_CONNECT_GOOGLE: 'integration:connect-google',
-  INTEGRATION_CONNECT_MOODLE: 'integration:connect-moodle',
+  INTEGRATION_CONNECT_MICROSOFT: 'integration:connect-microsoft',
   INTEGRATION_DISCONNECT: 'integration:disconnect',
+
+  // Google
+  GOOGLE_CALENDAR_LIST: 'google:calendar-list',
+  GOOGLE_DOCS_LIST: 'google:docs-list',
+
+  // Outlook / Microsoft
+  OUTLOOK_MESSAGES_LIST: 'outlook:messages-list',
 
   // Shell
   OPEN_EXTERNAL: 'shell:open-external',
@@ -160,6 +169,44 @@ export interface Transcription {
 
 export interface IntegrationStatus {
   google: boolean
-  moodle: boolean
-  openai: boolean
+  microsoft: boolean
+}
+
+export interface IntegrationConfig {
+  google: { clientId: string; clientSecret: string } | null
+  microsoft: { clientId: string } | null
+}
+
+export interface GoogleCalendarEvent {
+  id: string
+  title: string
+  start: string
+  end: string
+  allDay: boolean
+  color: string | null
+  htmlLink: string | null
+}
+
+export interface GoogleDoc {
+  id: string
+  name: string
+  modifiedTime: string
+  webViewLink: string
+}
+
+export interface OutlookMessage {
+  id: string
+  subject: string
+  fromName: string
+  fromEmail: string
+  preview: string
+  receivedAt: string
+  isRead: boolean
+  isFlagged: boolean
+  webLink: string
+}
+
+export interface OutlookMessages {
+  inbox: OutlookMessage[]
+  flagged: OutlookMessage[]
 }
