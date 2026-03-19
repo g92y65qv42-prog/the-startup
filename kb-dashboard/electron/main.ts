@@ -39,12 +39,16 @@ function createWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
-  registerLayoutIpc()
-  registerTasksIpc()
-  registerGradesIpc()
-  registerPomodoroIpc()
-  registerShellIpc()
-  registerNewsIpc()
+  try {
+    registerLayoutIpc()
+    registerTasksIpc()
+    registerGradesIpc()
+    registerPomodoroIpc()
+    registerShellIpc()
+    registerNewsIpc()
+  } catch (err) {
+    console.error('[startup] IPC registration failed — native module may need rebuilding:', err)
+  }
 
   createWindow()
 
