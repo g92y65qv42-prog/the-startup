@@ -5,6 +5,7 @@ import { registerTasksIpc } from './services/ipc/tasks'
 import { registerGradesIpc } from './services/ipc/grades'
 import { registerPomodoroIpc } from './services/ipc/pomodoro'
 import { registerShellIpc } from './services/ipc/shell'
+import { registerNewsIpc } from './services/ipc/news'
 
 nativeTheme.themeSource = 'dark'
 
@@ -43,6 +44,7 @@ app.whenReady().then(() => {
   registerGradesIpc()
   registerPomodoroIpc()
   registerShellIpc()
+  registerNewsIpc()
 
   createWindow()
 

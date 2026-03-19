@@ -117,6 +117,18 @@ function runMigrations(db: Database.Database): void {
           fetched_at TEXT NOT NULL
         );
       `
+    },
+    {
+      version: 2,
+      sql: `
+        CREATE TABLE news_feeds (
+          id TEXT PRIMARY KEY,
+          url TEXT NOT NULL UNIQUE,
+          label TEXT,
+          enabled INTEGER DEFAULT 1,
+          created_at TEXT NOT NULL
+        );
+      `
     }
   ]
 

@@ -35,6 +35,9 @@ export const IPC = {
   // News
   NEWS_LIST: 'news:list',
   NEWS_REFRESH: 'news:refresh',
+  NEWS_FEEDS_LIST: 'news:feeds-list',
+  NEWS_FEED_ADD: 'news:feed-add',
+  NEWS_FEED_REMOVE: 'news:feed-remove',
 
   // Transcription
   TRANSCRIPTION_LIST: 'transcription:list',
@@ -130,6 +133,13 @@ export interface NewsItem {
   source: string | null
   publishedAt: string | null
   fetchedAt: string
+}
+
+export interface NewsFeed {
+  id: string
+  url: string
+  label: string | null
+  enabled: boolean
 }
 
 export interface Transcription {
