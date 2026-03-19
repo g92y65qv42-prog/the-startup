@@ -118,7 +118,13 @@ export function registerNewsIpc(): void {
 
   ipcMain.handle(IPC.NEWS_LIST, (): NewsItem[] => {
     const rows = db
-      .prepare('SELECT * FROM news_items ORDER BY published_at DESC, fetched_at DESC LIMIT 5')
+      .prepare(`
+        SELECT id, title, summary, url, source, published_at, fetched_at FROM (
+          SELECT *, ROW_NUMBER() OVER (PARTITION BY source ORDER BY published_at DESC, fetched_at DESC) AS rn
+          FROM news_items
+        ) WHERE rn <= 5
+        ORDER BY published_at DESC, fetched_at DESC
+      `)
       .all() as Record<string, unknown>[]
     return rows.map(r => ({
       id: r.id as string,
