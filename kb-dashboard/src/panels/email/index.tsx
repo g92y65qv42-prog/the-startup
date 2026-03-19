@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { PanelWrapper } from '../_base/PanelWrapper'
 import { useStore } from '@/store'
 import { useIPC } from '@/hooks/useIPC'
-import { IPC, OutlookMessage, OutlookMessages } from '@shared/ipc-channels'
+import { IPC, IntegrationStatus, OutlookMessage, OutlookMessages } from '@shared/ipc-channels'
 
 type Tab = 'inbox' | 'flagged'
 
@@ -66,6 +66,7 @@ function MessageCard({ msg, onOpen }: { msg: OutlookMessage; onOpen: (url: strin
 export default function EmailPanel() {
   const { invoke } = useIPC()
   const connected = useStore(s => s.integrationStatus.microsoft)
+  const setIntegrationStatus = useStore(s => s.setIntegrationStatus)
 
   const [messages, setMessages] = useState<OutlookMessages>({ inbox: [], flagged: [] })
   const [loading, setLoading] = useState(false)
@@ -79,7 +80,13 @@ export default function EmailPanel() {
       const data = await invoke<OutlookMessages>(IPC.OUTLOOK_MESSAGES_LIST)
       setMessages(data)
     } catch (err) {
-      setError((err as Error).message)
+      const msg = (err as Error).message
+      setError(msg)
+      // Auth failure or disconnected — sync status so the panel reverts to login form
+      if (msg.includes('Authentication failed') || msg.includes('not connected')) {
+        const status = await invoke<IntegrationStatus>(IPC.INTEGRATION_STATUS)
+        setIntegrationStatus(status)
+      }
     } finally {
       setLoading(false)
     }
