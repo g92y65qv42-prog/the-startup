@@ -6,6 +6,7 @@ import { registerGradesIpc } from './services/ipc/grades'
 import { registerPomodoroIpc } from './services/ipc/pomodoro'
 import { registerShellIpc } from './services/ipc/shell'
 import { registerNewsIpc } from './services/ipc/news'
+import { registerTranscriptionIpc } from './services/ipc/transcription'
 
 nativeTheme.themeSource = 'dark'
 
@@ -46,6 +47,7 @@ app.whenReady().then(() => {
     registerPomodoroIpc()
     registerShellIpc()
     registerNewsIpc()
+    registerTranscriptionIpc()
   } catch (err) {
     console.error('[startup] IPC registration failed — native module may need rebuilding:', err)
   }

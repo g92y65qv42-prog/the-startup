@@ -42,6 +42,13 @@ export const IPC = {
   // Transcription
   TRANSCRIPTION_LIST: 'transcription:list',
   TRANSCRIPTION_SAVE: 'transcription:save',
+  TRANSCRIPTION_TRANSCRIBE: 'transcription:transcribe',
+  TRANSCRIPTION_DELETE: 'transcription:delete',
+
+  // Keychain
+  KEYCHAIN_GET: 'keychain:get',
+  KEYCHAIN_SET: 'keychain:set',
+  KEYCHAIN_DELETE: 'keychain:delete',
 
   // Integrations
   INTEGRATION_STATUS: 'integration:status',
