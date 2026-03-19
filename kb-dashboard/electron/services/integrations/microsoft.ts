@@ -43,8 +43,8 @@ export async function getMicrosoftConfig(): Promise<{ clientId: string } | null>
 }
 
 export async function saveMicrosoftConfig(email: string, appPassword: string): Promise<void> {
-  await setToken('microsoft-email', email)
-  await setToken('microsoft-app-password', appPassword)
+  await setToken('microsoft-email', email.trim())
+  await setToken('microsoft-app-password', appPassword.trim().replace(/\s+/g, ''))
 }
 
 // ---- Public API ----

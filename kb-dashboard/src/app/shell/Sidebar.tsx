@@ -69,7 +69,7 @@ function IntegrationsModal({ onClose }: { onClose: () => void }) {
     setMConnecting(true)
     setMError(null)
     try {
-      await invoke(IPC.INTEGRATION_SET_CONFIG, { provider: 'microsoft', clientId: mEmail.trim(), clientSecret: mAppPassword })
+      await invoke(IPC.INTEGRATION_SET_CONFIG, { provider: 'microsoft', clientId: mEmail.trim(), clientSecret: mAppPassword.trim().replace(/\s+/g, '') })
       setConfig({ ...config, microsoft: { clientId: mEmail.trim() } })
       await invoke(IPC.INTEGRATION_CONNECT_MICROSOFT)
       const s = await invoke<IntegrationStatus>(IPC.INTEGRATION_STATUS)
