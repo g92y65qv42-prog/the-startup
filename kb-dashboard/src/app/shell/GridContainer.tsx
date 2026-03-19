@@ -37,7 +37,12 @@ export function GridContainer({ width }: { width: number }) {
   const hiddenBackgroundPanels = PANEL_REGISTRY.filter(
     p => p.backgroundRequired && !panelVisibility[p.id]
   )
-  const visibleLayouts = panelLayouts.filter(l => panelVisibility[l.i])
+
+  // Build visible layouts; panels toggled back on that lost their entry get a default placement
+  const layoutMap = new Map(panelLayouts.map(l => [l.i, l]))
+  const visibleLayouts = PANEL_REGISTRY
+    .filter(p => panelVisibility[p.id])
+    .map(p => layoutMap.get(p.id) ?? { i: p.id, x: 0, y: Infinity, ...p.defaultLayout })
 
   return (
     <div style={{ position: 'relative', flex: 1, overflow: 'auto' }}>

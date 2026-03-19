@@ -22,11 +22,18 @@ export const createPanelsSlice: StateCreator<PanelsSlice> = (set, get) => ({
 
   updateLayouts: (layouts) => {
     const { workspaces, activeWorkspaceId } = get()
-    const updated = workspaces.map(ws =>
-      ws.id === activeWorkspaceId
-        ? { ...ws, panelLayouts: layouts.map(l => ({ i: l.i, x: l.x, y: l.y, w: l.w, h: l.h })) }
-        : ws
-    )
+    const updated = workspaces.map(ws => {
+      if (ws.id !== activeWorkspaceId) return ws
+      const incoming = new Map(layouts.map(l => [l.i, { i: l.i, x: l.x, y: l.y, w: l.w, h: l.h }]))
+      // Upsert: update known panels, keep hidden panels' last positions intact
+      const merged = ws.panelLayouts.map(existing =>
+        incoming.has(existing.i) ? incoming.get(existing.i)! : existing
+      )
+      for (const [id, layout] of incoming) {
+        if (!merged.find(l => l.i === id)) merged.push(layout)
+      }
+      return { ...ws, panelLayouts: merged }
+    })
     set({ workspaces: updated })
   },
 
