@@ -6,7 +6,8 @@ import {
   listCalendarEvents, listDocs,
 } from '../integrations/google'
 import {
-  getMicrosoftConfig, saveMicrosoftConfig,
+  getMicrosoftConfig,
+  saveMicrosoftConfig,
   isMicrosoftConnected, connectMicrosoft, disconnectMicrosoft,
   listOutlookMessages,
 } from '../integrations/microsoft'
@@ -18,21 +19,22 @@ export function registerIntegrationsIpc(): void {
     microsoft: await isMicrosoftConnected(),
   }))
 
-  // Get stored Client ID config (safe to expose — not secret tokens)
-  ipcMain.handle(IPC.INTEGRATION_GET_CONFIG, (): IntegrationConfig => {
+  // Get stored config (email for microsoft, clientId for google)
+  ipcMain.handle(IPC.INTEGRATION_GET_CONFIG, async (): Promise<IntegrationConfig> => {
     const google = getGoogleConfig()
-    const microsoft = getMicrosoftConfig()
+    const microsoft = await getMicrosoftConfig()
     return { google, microsoft }
   })
 
-  // Save Client ID / Secret (before connecting)
+  // Save credentials before connecting
   ipcMain.handle(
     IPC.INTEGRATION_SET_CONFIG,
-    (_e, data: { provider: 'google' | 'microsoft'; clientId: string; clientSecret?: string }) => {
+    async (_e, data: { provider: 'google' | 'microsoft'; clientId: string; clientSecret?: string }) => {
       if (data.provider === 'google') {
         saveGoogleConfig(data.clientId, data.clientSecret ?? '')
       } else {
-        saveMicrosoftConfig(data.clientId)
+        // clientId = email, clientSecret = app password
+        await saveMicrosoftConfig(data.clientId, data.clientSecret ?? '')
       }
       return { ok: true }
     }

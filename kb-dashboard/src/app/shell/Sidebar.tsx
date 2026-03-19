@@ -27,8 +27,9 @@ function IntegrationsModal({ onClose }: { onClose: () => void }) {
   const [gConnecting, setGConnecting] = useState(false)
   const [gError, setGError] = useState<string | null>(null)
 
-  // Microsoft form state
-  const [mClientId, setMClientId] = useState(config.microsoft?.clientId ?? '')
+  // Microsoft form state (IMAP — no Azure needed)
+  const [mEmail, setMEmail] = useState(config.microsoft?.clientId ?? '')
+  const [mAppPassword, setMAppPassword] = useState('')
   const [mConnecting, setMConnecting] = useState(false)
   const [mError, setMError] = useState<string | null>(null)
 
@@ -61,15 +62,15 @@ function IntegrationsModal({ onClose }: { onClose: () => void }) {
   }
 
   async function saveAndConnectMicrosoft() {
-    if (!mClientId.trim()) {
-      setMError('Client ID is required')
+    if (!mEmail.trim() || !mAppPassword.trim()) {
+      setMError('Email and app password are required')
       return
     }
     setMConnecting(true)
     setMError(null)
     try {
-      await invoke(IPC.INTEGRATION_SET_CONFIG, { provider: 'microsoft', clientId: mClientId.trim() })
-      setConfig({ ...config, microsoft: { clientId: mClientId.trim() } })
+      await invoke(IPC.INTEGRATION_SET_CONFIG, { provider: 'microsoft', clientId: mEmail.trim(), clientSecret: mAppPassword })
+      setConfig({ ...config, microsoft: { clientId: mEmail.trim() } })
       await invoke(IPC.INTEGRATION_CONNECT_MICROSOFT)
       const s = await invoke<IntegrationStatus>(IPC.INTEGRATION_STATUS)
       setStatus(s)
@@ -182,21 +183,25 @@ function IntegrationsModal({ onClose }: { onClose: () => void }) {
             )}
           </div>
           <p style={{ fontSize: 11, color: 'rgba(235,235,245,0.4)', margin: '0 0 12px', lineHeight: 1.5 }}>
-            Enables Outlook email panel. Register an app in{' '}
-            <span style={{ color: '#0A84FF' }}>Azure Portal</span> → App registrations.
-            Set platform to <em>Mobile and desktop applications</em> with redirect{' '}
-            <code style={{ fontSize: 10, background: 'rgba(255,255,255,0.08)', padding: '1px 4px', borderRadius: 3 }}>
-              http://localhost
-            </code>.
-            No Client Secret needed.
+            Enables Outlook email panel via IMAP — no Azure registration needed.
+            Use your Outlook email and an{' '}
+            <span style={{ color: '#0A84FF' }}>app password</span> (create one at{' '}
+            account.microsoft.com → Security → App passwords).
           </p>
 
           {!status.microsoft ? (
             <div className="flex flex-col gap-2">
               <input
-                placeholder="Application (Client) ID"
-                value={mClientId}
-                onChange={e => setMClientId(e.target.value)}
+                placeholder="Outlook email address"
+                value={mEmail}
+                onChange={e => setMEmail(e.target.value)}
+                style={inputStyle}
+              />
+              <input
+                placeholder="App password"
+                type="password"
+                value={mAppPassword}
+                onChange={e => setMAppPassword(e.target.value)}
                 style={inputStyle}
               />
               {mError && (
@@ -207,7 +212,7 @@ function IntegrationsModal({ onClose }: { onClose: () => void }) {
                 disabled={mConnecting}
                 style={{ ...btnStyle('#0078D4'), opacity: mConnecting ? 0.5 : 1 }}
               >
-                {mConnecting ? 'Opening browser…' : 'Save & Connect'}
+                {mConnecting ? 'Connecting…' : 'Save & Connect'}
               </button>
             </div>
           ) : (
