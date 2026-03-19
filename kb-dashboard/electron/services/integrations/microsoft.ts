@@ -18,12 +18,15 @@ function makeClient(email: string, appPassword: string): ImapFlow {
   })
 }
 
-// Connect and return a client, routing the 'error' event into the connect
-// promise so ECONNRESET / auth failures don't become uncaught exceptions.
+// Connect and propagate network errors through the promise (not as uncaught events).
 async function connectClient(client: ImapFlow): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    client.once('error', reject)
-    client.connect().then(resolve, reject)
+    const onError = (err: Error) => reject(err)
+    client.once('error', onError)
+    client.connect().then(
+      () => { client.off('error', onError); resolve() },
+      (err: Error) => { client.off('error', onError); reject(err) }
+    )
   })
 }
 
@@ -74,6 +77,7 @@ export async function disconnectMicrosoft(): Promise<void> {
 
 type ImapMsg = {
   uid: number
+  seq: number
   envelope: {
     subject?: string
     date?: Date
@@ -85,7 +89,7 @@ type ImapMsg = {
 function mapMsg(msg: ImapMsg, forceFlagged = false): OutlookMessage {
   const from = msg.envelope?.from?.[0]
   return {
-    id: String(msg.uid),
+    id: String(msg.uid || msg.seq),
     subject: msg.envelope?.subject ?? '(no subject)',
     fromName: from?.name ?? '',
     fromEmail: from ? `${from.mailbox ?? ''}@${from.host ?? ''}` : '',
@@ -112,21 +116,24 @@ export async function listOutlookMessages(): Promise<OutlookMessages> {
     const lock = await client.getMailboxLock('INBOX')
     try {
       const total = (client.mailbox as { exists: number }).exists
+
       if (total > 0) {
+        // Fetch last 20 by sequence number — consistent: no uid option anywhere here
         const start = Math.max(1, total - 19)
-        for await (const msg of client.fetch(`${start}:*`, { uid: true, envelope: true, flags: true })) {
+        for await (const msg of client.fetch(`${start}:${total}`, { envelope: true, flags: true, uid: true })) {
           inbox.push(mapMsg(msg as unknown as ImapMsg))
         }
         inbox.reverse()
-      }
 
-      const flaggedUids = await client.search({ flagged: true })
-      if (flaggedUids.length > 0) {
-        const uids = flaggedUids.slice(-10)
-        for await (const msg of client.fetch(uids.join(','), { uid: true, envelope: true, flags: true }, { uid: true })) {
-          flagged.push(mapMsg(msg as unknown as ImapMsg, true))
+        // Search returns sequence numbers by default; fetch with same mode (no uid option)
+        const flaggedSeqs = await client.search({ flagged: true })
+        if (flaggedSeqs.length > 0) {
+          const seqs = flaggedSeqs.slice(-10).join(',')
+          for await (const msg of client.fetch(seqs, { envelope: true, flags: true, uid: true })) {
+            flagged.push(mapMsg(msg as unknown as ImapMsg, true))
+          }
+          flagged.reverse()
         }
-        flagged.reverse()
       }
     } finally {
       lock.release()
