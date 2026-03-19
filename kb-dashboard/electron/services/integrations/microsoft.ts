@@ -14,7 +14,21 @@ function makeClient(email: string, appPassword: string): ImapFlow {
     secure: true,
     auth: { user: email, pass: appPassword },
     logger: false,
+    tls: { servername: IMAP_HOST },
   })
+}
+
+// Connect and return a client, routing the 'error' event into the connect
+// promise so ECONNRESET / auth failures don't become uncaught exceptions.
+async function connectClient(client: ImapFlow): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    client.once('error', reject)
+    client.connect().then(resolve, reject)
+  })
+}
+
+async function safeLogout(client: ImapFlow): Promise<void> {
+  try { await client.logout() } catch { /* ignore — connection may already be closed */ }
 }
 
 // ---- Credential storage (keychain only — no Azure/DB needed) ----
@@ -44,8 +58,11 @@ export async function connectMicrosoft(): Promise<void> {
   if (!email || !appPassword) throw new Error('Save your Outlook email and app password before connecting')
 
   const client = makeClient(email, appPassword)
-  await client.connect()
-  await client.logout()
+  try {
+    await connectClient(client)
+  } finally {
+    await safeLogout(client)
+  }
 }
 
 export async function disconnectMicrosoft(): Promise<void> {
@@ -86,7 +103,7 @@ export async function listOutlookMessages(): Promise<OutlookMessages> {
   if (!email || !appPassword) throw new Error('Microsoft not connected')
 
   const client = makeClient(email, appPassword)
-  await client.connect()
+  await connectClient(client)
 
   try {
     const inbox: OutlookMessage[] = []
@@ -117,6 +134,6 @@ export async function listOutlookMessages(): Promise<OutlookMessages> {
 
     return { inbox, flagged }
   } finally {
-    await client.logout()
+    await safeLogout(client)
   }
 }
