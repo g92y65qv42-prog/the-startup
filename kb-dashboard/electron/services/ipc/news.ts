@@ -151,7 +151,11 @@ export function registerNewsIpc(): void {
   })
 
   ipcMain.handle(IPC.NEWS_FEED_REMOVE, (_e, id: string) => {
+    const feed = db.prepare('SELECT label FROM news_feeds WHERE id = ?').get(id) as { label: string | null } | undefined
     db.prepare('DELETE FROM news_feeds WHERE id = ?').run(id)
+    if (feed?.label) {
+      db.prepare('DELETE FROM news_items WHERE source = ?').run(feed.label)
+    }
     return { ok: true }
   })
 
@@ -159,6 +163,15 @@ export function registerNewsIpc(): void {
     const feeds = db
       .prepare('SELECT * FROM news_feeds WHERE enabled = 1')
       .all() as Array<{ url: string; label: string }>
+
+    // Remove cached articles from feeds that are no longer active
+    const activeLabels = feeds.map(f => f.label).filter(Boolean)
+    if (activeLabels.length > 0) {
+      const placeholders = activeLabels.map(() => '?').join(', ')
+      db.prepare(`DELETE FROM news_items WHERE source NOT IN (${placeholders})`).run(...activeLabels)
+    } else {
+      db.prepare('DELETE FROM news_items').run()
+    }
     const now = new Date().toISOString()
     const upsert = db.prepare(`
       INSERT OR REPLACE INTO news_items (id, title, summary, url, source, published_at, fetched_at)
