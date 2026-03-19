@@ -7,7 +7,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "postinstall": "electron-rebuild -f -w better-sqlite3 -w keytar",
+    "postinstall": "electron-rebuild -f -w better-sqlite3,keytar",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
