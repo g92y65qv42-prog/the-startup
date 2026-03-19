@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { PanelWrapper } from '../_base/PanelWrapper'
 import { useStore } from '@/store'
 import { useIPC } from '@/hooks/useIPC'
@@ -23,23 +23,26 @@ const SOURCE_COLORS: Record<string, string> = {
   'Ars Technica Science': '#FF453A',
 }
 
+function sourceColor(source: string | null): string {
+  if (!source) return '#636366'
+  return SOURCE_COLORS[source] ?? '#636366'
+}
+
 function SourceBadge({ source }: { source: string | null }) {
   const label = source ?? '?'
-  const bg = SOURCE_COLORS[label] ?? '#636366'
   return (
     <span style={{
       fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4,
-      background: bg, color: '#fff', whiteSpace: 'nowrap', flexShrink: 0,
+      background: sourceColor(label), color: '#fff', whiteSpace: 'nowrap', flexShrink: 0,
     }}>
       {label}
     </span>
   )
 }
 
-function NewsCard({ item, onOpen }: { item: NewsItem; onOpen: (url: string) => void }) {
+function NewsCard({ item, onOpen, showSource }: { item: NewsItem; onOpen: (url: string) => void; showSource: boolean }) {
   return (
     <div
-      className="group"
       style={{
         background: 'rgba(255,255,255,0.04)',
         borderRadius: 10,
@@ -53,7 +56,7 @@ function NewsCard({ item, onOpen }: { item: NewsItem; onOpen: (url: string) => v
       onClick={() => item.url && onOpen(item.url)}
     >
       <div className="flex items-center gap-2 mb-1.5">
-        <SourceBadge source={item.source} />
+        {showSource && <SourceBadge source={item.source} />}
         <span style={{ fontSize: 10, color: 'rgba(235,235,245,0.35)', marginLeft: 'auto' }}>
           {timeAgo(item.publishedAt)}
         </span>
@@ -155,6 +158,7 @@ export default function ScienceNewsPanel() {
   const [loading, setLoading] = useState(false)
   const [showFeeds, setShowFeeds] = useState(false)
   const [fetchErrors, setFetchErrors] = useState<string[]>([])
+  const [activeSource, setActiveSource] = useState<string | null>(null) // null = All
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   async function refresh() {
@@ -171,17 +175,20 @@ export default function ScienceNewsPanel() {
   }
 
   useEffect(() => {
-    // Load cached items immediately, then refresh in background
     invoke<typeof newsItems>(IPC.NEWS_LIST).then(items => {
       setNewsItems(items)
       if (items.length === 0) refresh()
     })
     invoke<typeof newsFeeds>(IPC.NEWS_FEEDS_LIST).then(setNewsFeeds)
 
-    // Poll every 30 minutes
     pollRef.current = setInterval(refresh, POLL_INTERVAL_MS)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
+
+  // Reset active source if it disappears after feed removal
+  useEffect(() => {
+    if (activeSource && !sources.includes(activeSource)) setActiveSource(null)
+  }, [newsItems])
 
   function handleOpen(url: string) {
     invoke(IPC.OPEN_EXTERNAL, url)
@@ -198,18 +205,38 @@ export default function ScienceNewsPanel() {
     removeNewsFeed(id)
   }
 
+  // Sorted + filtered items
+  const sources = useMemo(() => {
+    const seen = new Set<string>()
+    const list: string[] = []
+    for (const item of newsItems) {
+      if (item.source && !seen.has(item.source)) {
+        seen.add(item.source)
+        list.push(item.source)
+      }
+    }
+    return list
+  }, [newsItems])
+
+  const visibleItems = useMemo(() => {
+    const sorted = [...newsItems].sort((a, b) => {
+      const ta = a.publishedAt ? new Date(a.publishedAt).getTime() : new Date(a.fetchedAt).getTime()
+      const tb = b.publishedAt ? new Date(b.publishedAt).getTime() : new Date(b.fetchedAt).getTime()
+      return tb - ta
+    })
+    if (!activeSource) return sorted
+    return sorted.filter(item => item.source === activeSource)
+  }, [newsItems, activeSource])
+
   return (
     <PanelWrapper panelId="science-news" title="Science News">
-      <div className="flex items-center justify-between mb-3">
+      {/* Top bar */}
+      <div className="flex items-center justify-between mb-2">
         <div className="flex gap-1.5">
           <button
             onClick={refresh}
             disabled={loading}
-            style={{
-              ...chipStyle,
-              opacity: loading ? 0.5 : 1,
-              cursor: loading ? 'default' : 'pointer',
-            }}
+            style={{ ...chipStyle, opacity: loading ? 0.5 : 1, cursor: loading ? 'default' : 'pointer' }}
           >
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
@@ -221,9 +248,39 @@ export default function ScienceNewsPanel() {
           </button>
         </div>
         <span style={{ fontSize: 11, color: 'rgba(235,235,245,0.3)' }}>
-          {newsItems.length} items
+          {visibleItems.length} items
         </span>
       </div>
+
+      {/* Feed tabs */}
+      {sources.length > 1 && (
+        <div className="flex gap-1 mb-2" style={{ overflowX: 'auto', flexShrink: 0 }}>
+          <button
+            onClick={() => setActiveSource(null)}
+            style={{
+              ...tabStyle,
+              background: !activeSource ? 'rgba(255,255,255,0.12)' : 'transparent',
+              color: !activeSource ? '#EBEBF5' : 'rgba(235,235,245,0.45)',
+            }}
+          >
+            All
+          </button>
+          {sources.map(src => (
+            <button
+              key={src}
+              onClick={() => setActiveSource(src)}
+              style={{
+                ...tabStyle,
+                background: activeSource === src ? sourceColor(src) + '33' : 'transparent',
+                color: activeSource === src ? '#EBEBF5' : 'rgba(235,235,245,0.45)',
+                borderBottom: activeSource === src ? `2px solid ${sourceColor(src)}` : '2px solid transparent',
+              }}
+            >
+              {src}
+            </button>
+          ))}
+        </div>
+      )}
 
       {fetchErrors.length > 0 && (
         <div style={{
@@ -245,14 +302,14 @@ export default function ScienceNewsPanel() {
         </div>
       )}
 
-      <div className="flex flex-col gap-2 overflow-y-auto" style={{ maxHeight: 'calc(100% - 48px)' }}>
-        {newsItems.length === 0 && !loading && (
+      <div className="flex flex-col gap-2 overflow-y-auto" style={{ maxHeight: 'calc(100% - 80px)' }}>
+        {visibleItems.length === 0 && !loading && (
           <div style={{ textAlign: 'center', padding: '24px 0', color: 'rgba(235,235,245,0.3)', fontSize: 13 }}>
-            No news yet — click Refresh to fetch feeds
+            {newsItems.length === 0 ? 'No news yet — click Refresh to fetch feeds' : 'No items for this feed'}
           </div>
         )}
-        {newsItems.map(item => (
-          <NewsCard key={item.id} item={item} onOpen={handleOpen} />
+        {visibleItems.map(item => (
+          <NewsCard key={item.id} item={item} onOpen={handleOpen} showSource={!activeSource} />
         ))}
       </div>
     </PanelWrapper>
@@ -264,6 +321,14 @@ const chipStyle: React.CSSProperties = {
   border: 'none', borderRadius: 6,
   color: '#fff', fontSize: 11, fontWeight: 500,
   padding: '3px 10px', cursor: 'pointer',
+}
+
+const tabStyle: React.CSSProperties = {
+  border: 'none', borderRadius: '6px 6px 0 0',
+  fontSize: 11, fontWeight: 500,
+  padding: '3px 8px', cursor: 'pointer',
+  whiteSpace: 'nowrap', transition: 'all 0.15s ease',
+  borderBottom: '2px solid transparent',
 }
 
 const inputStyle: React.CSSProperties = {

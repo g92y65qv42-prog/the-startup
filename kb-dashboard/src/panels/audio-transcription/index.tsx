@@ -4,7 +4,15 @@ import { useStore } from '@/store'
 import { useIPC } from '@/hooks/useIPC'
 import { IPC, Transcription } from '@shared/ipc-channels'
 
-type RecordingState = 'idle' | 'recording' | 'transcribing'
+type RecordingState = 'idle' | 'recording' | 'saving'
+
+// Web Speech API types (available in Chromium/Electron)
+declare global {
+  interface Window {
+    SpeechRecognition: typeof SpeechRecognition
+    webkitSpeechRecognition: typeof SpeechRecognition
+  }
+}
 
 function formatDuration(s: number): string {
   const m = Math.floor(s / 60)
@@ -19,48 +27,6 @@ function timeAgo(dateStr: string): string {
   const hrs = Math.floor(mins / 60)
   if (hrs < 24) return `${hrs}h ago`
   return `${Math.floor(hrs / 24)}d ago`
-}
-
-// ---- API Key Modal ----
-
-function ApiKeyModal({ onSave, onClose }: { onSave: (key: string) => void; onClose: () => void }) {
-  const [key, setKey] = useState('')
-
-  return (
-    <div style={{
-      position: 'absolute', inset: 0, zIndex: 50,
-      background: 'rgba(28,28,30,0.85)', backdropFilter: 'blur(20px) saturate(180%)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      borderRadius: 12,
-    }}>
-      <div style={{ width: '85%', maxWidth: 320 }}>
-        <p style={{ fontSize: 15, fontWeight: 600, color: '#EBEBF5', marginBottom: 4 }}>
-          OpenAI API Key
-        </p>
-        <p style={{ fontSize: 11, color: 'rgba(235,235,245,0.4)', marginBottom: 12 }}>
-          Required for Whisper transcription. Stored securely in macOS Keychain.
-        </p>
-        <input
-          type="password"
-          placeholder="sk-..."
-          value={key}
-          onChange={e => setKey(e.target.value)}
-          style={inputStyle}
-          autoFocus
-        />
-        <div className="flex gap-2 mt-3">
-          <button onClick={onClose} style={btnStyle('rgba(255,255,255,0.1)')}>Cancel</button>
-          <button
-            onClick={() => key.trim() && onSave(key.trim())}
-            disabled={!key.trim()}
-            style={{ ...btnStyle('#0A84FF'), opacity: key.trim() ? 1 : 0.4, flex: 1 }}
-          >
-            Save Key
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // ---- Transcript Card ----
@@ -128,86 +94,109 @@ export default function AudioTranscriptionPanel() {
   const [recordingState, setRecordingState] = useState<RecordingState>('idle')
   const [elapsed, setElapsed] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null)
-  const [showKeyModal, setShowKeyModal] = useState(false)
   const [search, setSearch] = useState('')
+  const [interimText, setInterimText] = useState('')
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<Blob[]>([])
+  // Refs to avoid stale closures in recognition callbacks
+  const isRecordingRef = useRef(false)
+  const finalTranscriptRef = useRef('')
+  const elapsedRef = useRef(0)
+  const recognitionRef = useRef<SpeechRecognition | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
 
-  // Load history + check API key on mount
+  const speechSupported = typeof window !== 'undefined' &&
+    !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+
   useEffect(() => {
     invoke<Transcription[]>(IPC.TRANSCRIPTION_LIST).then(setTranscriptions)
-    invoke<string | null>(IPC.KEYCHAIN_GET, 'openai').then(k => setHasApiKey(k != null))
   }, [])
 
-  // Elapsed timer
   useEffect(() => {
-    if (recordingState === 'recording') {
-      setElapsed(0)
-      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000)
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current)
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current) }
-  }, [recordingState])
+    elapsedRef.current = elapsed
+  }, [elapsed])
 
-  async function startRecording() {
+  function startTimer() {
+    setElapsed(0)
+    elapsedRef.current = 0
+    timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000)
+  }
+
+  function stopTimer() {
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  async function saveTranscript(text: string, durationSeconds: number) {
+    setRecordingState('saving')
+    const id = crypto.randomUUID()
+    const now = new Date().toISOString()
+    const title = text.trim().slice(0, 60).replace(/\n/g, ' ') || `Recording ${now.slice(0, 10)}`
+    const record: Transcription = {
+      id, title, audioPath: null,
+      transcript: text.trim() || null,
+      durationSeconds, createdAt: now,
+    }
+    await invoke(IPC.TRANSCRIPTION_SAVE, record)
+    addTranscription(record)
+    setRecordingState('idle')
+    setInterimText('')
+    finalTranscriptRef.current = ''
+  }
+
+  function startRecording() {
     setError(null)
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
-      chunksRef.current = []
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition
+    const recognition = new SpeechRec()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = 'en-US'
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data)
+    isRecordingRef.current = true
+    finalTranscriptRef.current = ''
+
+    recognition.onresult = (e: SpeechRecognitionEvent) => {
+      let interim = ''
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          finalTranscriptRef.current += e.results[i][0].transcript + ' '
+        } else {
+          interim += e.results[i][0].transcript
+        }
       }
-
-      recorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop())
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
-        await sendForTranscription(blob)
-      }
-
-      mediaRecorderRef.current = recorder
-      recorder.start(1000)
-      setRecordingState('recording')
-    } catch (err) {
-      setError(`Microphone access denied: ${(err as Error).message}`)
+      setInterimText(interim)
     }
+
+    recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
+      if (e.error === 'no-speech') return // ignore silence gaps
+      setError(`Speech recognition error: ${e.error}`)
+      isRecordingRef.current = false
+      stopTimer()
+      setRecordingState('idle')
+      setInterimText('')
+    }
+
+    // Auto-restarts when it stops due to silence (continuous mode quirk)
+    recognition.onend = () => {
+      if (isRecordingRef.current) {
+        try { recognition.start() } catch { /* already stopped */ }
+      } else {
+        stopTimer()
+        saveTranscript(finalTranscriptRef.current.trim(), elapsedRef.current)
+      }
+    }
+
+    recognitionRef.current = recognition
+    recognition.start()
+    startTimer()
+    setRecordingState('recording')
   }
 
   function stopRecording() {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop()
-    }
-  }
-
-  async function sendForTranscription(blob: Blob) {
-    setRecordingState('transcribing')
-    setError(null)
-    try {
-      const arrayBuffer = await blob.arrayBuffer()
-      const audioData = Array.from(new Uint8Array(arrayBuffer))
-      const result = await invoke<Transcription>(IPC.TRANSCRIPTION_TRANSCRIBE, {
-        audioData,
-        durationSeconds: elapsed,
-      })
-      addTranscription(result)
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setRecordingState('idle')
-    }
-  }
-
-  async function handleSaveApiKey(key: string) {
-    await invoke(IPC.KEYCHAIN_SET, 'openai', key)
-    setHasApiKey(true)
-    setShowKeyModal(false)
+    isRecordingRef.current = false
+    recognitionRef.current?.stop()
+    // saveTranscript is called in onend once isRecordingRef is false
   }
 
   async function handleDelete(id: string) {
@@ -223,27 +212,24 @@ export default function AudioTranscriptionPanel() {
     : transcriptions
 
   const isRecording = recordingState === 'recording'
-  const isTranscribing = recordingState === 'transcribing'
+  const isSaving = recordingState === 'saving'
   const ringColor = isRecording ? '#FF453A' : '#0A84FF'
 
   return (
     <PanelWrapper panelId="audio-transcription" title="Transcription">
-      <div className="flex flex-col h-full" style={{ position: 'relative' }}>
-        {showKeyModal && (
-          <ApiKeyModal onSave={handleSaveApiKey} onClose={() => setShowKeyModal(false)} />
-        )}
+      <div className="flex flex-col h-full">
 
         {/* Controls */}
         <div className="flex items-center gap-3 mb-3">
           <button
             onClick={isRecording ? stopRecording : startRecording}
-            disabled={isTranscribing || hasApiKey === false}
+            disabled={isSaving || !speechSupported}
             style={{
               width: 44, height: 44, borderRadius: '50%',
               border: `2px solid ${ringColor}`, background: 'transparent',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: isTranscribing ? 'default' : 'pointer',
-              opacity: isTranscribing ? 0.4 : 1,
+              cursor: (isSaving || !speechSupported) ? 'default' : 'pointer',
+              opacity: (isSaving || !speechSupported) ? 0.4 : 1,
               transition: 'all 0.15s ease',
             }}
           >
@@ -254,33 +240,29 @@ export default function AudioTranscriptionPanel() {
             )}
           </button>
 
-          <div className="flex flex-col flex-1">
+          <div className="flex flex-col flex-1" style={{ minWidth: 0 }}>
             {isRecording && (
               <span style={{ fontSize: 22, fontWeight: 600, color: '#FF453A', letterSpacing: '-0.02em' }}>
                 {formatDuration(elapsed)}
               </span>
             )}
-            {isTranscribing && (
-              <span style={{ fontSize: 13, color: 'rgba(235,235,245,0.5)' }}>
-                Transcribing…
-              </span>
+            {isSaving && (
+              <span style={{ fontSize: 13, color: 'rgba(235,235,245,0.5)' }}>Saving…</span>
             )}
             {recordingState === 'idle' && (
               <span style={{ fontSize: 13, color: 'rgba(235,235,245,0.5)' }}>
-                {hasApiKey ? 'Ready to record' : 'Set API key to start'}
+                {speechSupported ? 'Ready to record' : 'Speech API not available'}
+              </span>
+            )}
+            {isRecording && interimText && (
+              <span style={{
+                fontSize: 11, color: 'rgba(235,235,245,0.4)',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {interimText}
               </span>
             )}
           </div>
-
-          <button
-            onClick={() => setShowKeyModal(true)}
-            style={{
-              ...chipStyle,
-              background: hasApiKey ? 'rgba(255,255,255,0.08)' : 'rgba(10,132,255,0.2)',
-            }}
-          >
-            {hasApiKey ? 'Key' : 'Set Key'}
-          </button>
         </div>
 
         {/* Error */}
@@ -337,9 +319,3 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 6, color: '#fff', fontSize: 12,
   padding: '6px 8px', outline: 'none', width: '100%',
 }
-
-const btnStyle = (bg: string): React.CSSProperties => ({
-  background: bg, border: 'none', borderRadius: 8,
-  color: '#fff', padding: '6px 14px', fontSize: 13,
-  fontWeight: 500, cursor: 'pointer',
-})
