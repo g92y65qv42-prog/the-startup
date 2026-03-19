@@ -60,13 +60,16 @@ export async function connectMicrosoft(): Promise<void> {
   const appPassword = await getToken('microsoft-app-password')
   if (!email || !appPassword) throw new Error('Save your Outlook email and app password before connecting')
 
+  console.log(`[microsoft] connecting as "${email}" — password length: ${appPassword.length}`)
+
   const client = makeClient(email, appPassword)
   try {
     await connectClient(client)
+    console.log('[microsoft] connected successfully')
   } catch (err) {
     if ((err as { authenticationFailed?: boolean }).authenticationFailed) {
       await disconnectMicrosoft()
-      throw new Error('Authentication failed — check your email and app password, then reconnect')
+      throw new Error(`Authentication failed for "${email}" (password length: ${appPassword.length}) — re-enter your app password and try again`)
     }
     throw err
   } finally {
