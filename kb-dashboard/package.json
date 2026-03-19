@@ -2,7 +2,7 @@
   "name": "kb-dashboard",
   "version": "0.1.0",
   "description": "KB Dashboard — macOS desktop dashboard",
-  "main": "dist-electron/main.js",
+  "main": "out/main/main.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
