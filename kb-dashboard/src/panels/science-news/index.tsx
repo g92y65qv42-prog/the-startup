@@ -154,12 +154,15 @@ export default function ScienceNewsPanel() {
 
   const [loading, setLoading] = useState(false)
   const [showFeeds, setShowFeeds] = useState(false)
+  const [fetchErrors, setFetchErrors] = useState<string[]>([])
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   async function refresh() {
     setLoading(true)
+    setFetchErrors([])
     try {
-      await invoke(IPC.NEWS_REFRESH)
+      const result = await invoke<{ count: number; errors: string[] }>(IPC.NEWS_REFRESH)
+      if (result?.errors?.length) setFetchErrors(result.errors)
       const items = await invoke<typeof newsItems>(IPC.NEWS_LIST)
       setNewsItems(items)
     } finally {
@@ -187,6 +190,7 @@ export default function ScienceNewsPanel() {
   async function handleAddFeed(url: string, label: string) {
     const feed = await invoke<NewsFeed>(IPC.NEWS_FEED_ADD, { url, label })
     addNewsFeed(feed)
+    refresh()
   }
 
   async function handleRemoveFeed(id: string) {
@@ -220,6 +224,20 @@ export default function ScienceNewsPanel() {
           {newsItems.length} items
         </span>
       </div>
+
+      {fetchErrors.length > 0 && (
+        <div style={{
+          background: 'rgba(255,69,58,0.12)', border: '1px solid rgba(255,69,58,0.25)',
+          borderRadius: 8, padding: '6px 10px', marginBottom: 8,
+        }}>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#FF453A', margin: '0 0 2px' }}>
+            Failed to fetch {fetchErrors.length} feed{fetchErrors.length > 1 ? 's' : ''}:
+          </p>
+          {fetchErrors.map((e, i) => (
+            <p key={i} style={{ fontSize: 11, color: 'rgba(235,235,245,0.6)', margin: 0 }}>{e}</p>
+          ))}
+        </div>
+      )}
 
       {showFeeds && (
         <div className="mb-3">

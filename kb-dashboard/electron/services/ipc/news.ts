@@ -159,40 +159,51 @@ export function registerNewsIpc(): void {
     return { ok: true }
   })
 
-  ipcMain.handle(IPC.NEWS_REFRESH, async (): Promise<{ count: number }> => {
+  ipcMain.handle(IPC.NEWS_REFRESH, async (): Promise<{ count: number; errors: string[] }> => {
     const feeds = db
       .prepare('SELECT * FROM news_feeds WHERE enabled = 1')
-      .all() as Array<{ url: string; label: string }>
+      .all() as Array<{ url: string; label: string | null }>
+
+    // Resolve effective source label (never null — fall back to hostname)
+    const feedsWithSource = feeds.map(f => ({
+      url: f.url,
+      source: f.label ?? (() => { try { return new URL(f.url).hostname } catch { return f.url } })(),
+    }))
 
     // Remove cached articles from feeds that are no longer active
-    const activeLabels = feeds.map(f => f.label).filter(Boolean)
-    if (activeLabels.length > 0) {
-      const placeholders = activeLabels.map(() => '?').join(', ')
-      db.prepare(`DELETE FROM news_items WHERE source NOT IN (${placeholders})`).run(...activeLabels)
+    const activeSources = feedsWithSource.map(f => f.source)
+    if (activeSources.length > 0) {
+      const placeholders = activeSources.map(() => '?').join(', ')
+      db.prepare(`DELETE FROM news_items WHERE source NOT IN (${placeholders})`).run(...activeSources)
     } else {
       db.prepare('DELETE FROM news_items').run()
     }
+
     const now = new Date().toISOString()
     const upsert = db.prepare(`
       INSERT OR REPLACE INTO news_items (id, title, summary, url, source, published_at, fetched_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `)
     let count = 0
+    const errors: string[] = []
+
     await Promise.allSettled(
-      feeds.map(async feed => {
+      feedsWithSource.map(async feed => {
         try {
           const xml = await fetchUrl(feed.url)
-          const items = parseFeed(xml, feed.label)
+          const items = parseFeed(xml, feed.source)
           for (const item of items) {
             if (!item.title || !item.url) continue
             upsert.run(stableId(item.url), item.title, item.summary, item.url, item.source, item.publishedAt, now)
             count++
           }
         } catch (err) {
-          console.error(`[news] Failed to fetch ${feed.url}:`, err)
+          const msg = err instanceof Error ? err.message : String(err)
+          console.error(`[news] Failed to fetch ${feed.url}:`, msg)
+          errors.push(`${feed.source}: ${msg}`)
         }
       })
     )
-    return { count }
+    return { count, errors }
   })
 }
