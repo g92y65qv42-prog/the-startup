@@ -63,6 +63,12 @@ export async function connectMicrosoft(): Promise<void> {
   const client = makeClient(email, appPassword)
   try {
     await connectClient(client)
+  } catch (err) {
+    if ((err as { authenticationFailed?: boolean }).authenticationFailed) {
+      await disconnectMicrosoft()
+      throw new Error('Authentication failed — check your email and app password, then reconnect')
+    }
+    throw err
   } finally {
     await safeLogout(client)
   }
@@ -107,7 +113,15 @@ export async function listOutlookMessages(): Promise<OutlookMessages> {
   if (!email || !appPassword) throw new Error('Microsoft not connected')
 
   const client = makeClient(email, appPassword)
-  await connectClient(client)
+  try {
+    await connectClient(client)
+  } catch (err) {
+    if ((err as { authenticationFailed?: boolean }).authenticationFailed) {
+      await disconnectMicrosoft()
+      throw new Error('Authentication failed — check your email and app password, then reconnect')
+    }
+    throw err
+  }
 
   try {
     const inbox: OutlookMessage[] = []
