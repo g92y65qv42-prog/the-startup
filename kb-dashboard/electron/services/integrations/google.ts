@@ -4,7 +4,7 @@ import { createHash, randomBytes } from 'crypto'
 import { request as httpsRequest } from 'https'
 import { getDb } from '../db'
 import { getToken, setToken, deleteToken } from '../keychain'
-import type { GoogleCalendarEvent, GoogleDoc } from '../../../src/shared/ipc-channels'
+import type { GoogleCalendarEvent, GoogleDoc, OutlookMessage, OutlookMessages } from '../../../src/shared/ipc-channels'
 
 // ---- PKCE helpers ----
 
@@ -144,6 +144,7 @@ export async function connectGoogle(): Promise<void> {
     'openid', 'email', 'profile',
     'https://www.googleapis.com/auth/calendar.readonly',
     'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/gmail.readonly',
   ].join(' ')
 
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
@@ -227,6 +228,79 @@ export async function listCalendarEvents(): Promise<GoogleCalendarEvent[]> {
     color: item.colorId ? (GOOGLE_EVENT_COLORS[item.colorId] ?? null) : null,
     htmlLink: item.htmlLink ?? null,
   }))
+}
+
+// ---- Gmail label (for forwarding filter) ----
+
+export async function saveGmailLabel(label: string): Promise<void> {
+  await setToken('gmail-forwarding-label', label)
+}
+
+export async function getGmailLabel(): Promise<string | null> {
+  return getToken('gmail-forwarding-label')
+}
+
+// ---- Gmail messages ----
+
+export async function listGmailMessages(): Promise<OutlookMessages> {
+  const token = await getValidToken()
+  const label = await getGmailLabel()
+  if (!label) return { inbox: [], flagged: [] }
+
+  // Resolve label name → ID (system labels like INBOX match by ID directly)
+  type GmailLabel = { id: string; name: string }
+  const labelsData = await httpsGet('https://gmail.googleapis.com/gmail/v1/users/me/labels', token)
+  const allLabels = (labelsData.labels as GmailLabel[]) ?? []
+  const labelObj = allLabels.find(
+    l => l.name.toLowerCase() === label.toLowerCase() || l.id.toLowerCase() === label.toLowerCase()
+  )
+  if (!labelObj) throw new Error(`Gmail label "${label}" not found — check the label name in Integrations`)
+
+  // Fetch message IDs for inbox and flagged lists
+  const [inboxData, flaggedData] = await Promise.all([
+    httpsGet(`https://gmail.googleapis.com/gmail/v1/users/me/messages?labelIds=${encodeURIComponent(labelObj.id)}&maxResults=20`, token),
+    httpsGet(`https://gmail.googleapis.com/gmail/v1/users/me/messages?labelIds=${encodeURIComponent(labelObj.id)},STARRED&maxResults=10`, token),
+  ])
+
+  const inboxIds: string[] = ((inboxData.messages as { id: string }[]) ?? []).map(m => m.id)
+  const flaggedIds: string[] = ((flaggedData.messages as { id: string }[]) ?? []).map(m => m.id)
+
+  async function fetchMeta(id: string): Promise<OutlookMessage> {
+    const data = await httpsGet(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject,From,Date`,
+      token
+    )
+    type Header = { name: string; value: string }
+    const headers: Header[] = (data.payload as { headers?: Header[] })?.headers ?? []
+    const getH = (name: string) => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value ?? ''
+
+    const fromRaw = getH('From')
+    const fromMatch = fromRaw.match(/^(.*?)\s*<([^>]+)>$/)
+    const fromName = fromMatch ? fromMatch[1].trim().replace(/^["']|["']$/g, '') : ''
+    const fromEmail = fromMatch ? fromMatch[2] : fromRaw
+
+    const labelIds = (data.labelIds as string[]) ?? []
+    return {
+      id,
+      subject: getH('Subject') || '(no subject)',
+      fromName,
+      fromEmail,
+      preview: (data.snippet as string) ?? '',
+      receivedAt: data.internalDate
+        ? new Date(parseInt(data.internalDate as string, 10)).toISOString()
+        : '',
+      isRead: !labelIds.includes('UNREAD'),
+      isFlagged: labelIds.includes('STARRED'),
+      webLink: `https://mail.google.com/mail/u/0/#all/${data.threadId as string}`,
+    }
+  }
+
+  const [inbox, flagged] = await Promise.all([
+    Promise.all(inboxIds.map(fetchMeta)),
+    Promise.all(flaggedIds.map(fetchMeta)),
+  ])
+
+  return { inbox, flagged }
 }
 
 // ---- Google Drive (Docs only) ----

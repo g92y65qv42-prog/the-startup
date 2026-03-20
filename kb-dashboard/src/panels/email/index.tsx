@@ -65,25 +65,28 @@ function MessageCard({ msg, onOpen }: { msg: OutlookMessage; onOpen: (url: strin
 
 export default function EmailPanel() {
   const { invoke } = useIPC()
-  const connected = useStore(s => s.integrationStatus.microsoft)
+  const connected = useStore(s => s.integrationStatus.google)
   const setIntegrationStatus = useStore(s => s.setIntegrationStatus)
 
   const [messages, setMessages] = useState<OutlookMessages>({ inbox: [], flagged: [] })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('inbox')
+  const [noLabel, setNoLabel] = useState(false)
 
   async function load() {
     setLoading(true)
     setError(null)
+    setNoLabel(false)
     try {
-      const data = await invoke<OutlookMessages>(IPC.OUTLOOK_MESSAGES_LIST)
+      const label = await invoke<string | null>(IPC.GMAIL_LABEL_GET)
+      if (!label) { setNoLabel(true); return }
+      const data = await invoke<OutlookMessages>(IPC.GMAIL_MESSAGES_LIST)
       setMessages(data)
     } catch (err) {
       const msg = (err as Error).message
       setError(msg)
-      // Auth failure or disconnected — sync status so the panel reverts to login form
-      if (msg.includes('Authentication failed') || msg.includes('not connected')) {
+      if (msg.includes('not connected') || msg.includes('reconnect')) {
         const status = await invoke<IntegrationStatus>(IPC.INTEGRATION_STATUS)
         setIntegrationStatus(status)
       }
@@ -95,7 +98,6 @@ export default function EmailPanel() {
   useEffect(() => {
     if (!connected) return
     load()
-    // Refresh every 5 minutes
     const id = setInterval(load, 5 * 60 * 1000)
     return () => clearInterval(id)
   }, [connected])
@@ -108,15 +110,25 @@ export default function EmailPanel() {
   const unreadCount = messages.inbox.filter(m => !m.isRead).length
 
   return (
-    <PanelWrapper panelId="email" title="Outlook">
+    <PanelWrapper panelId="email" title="Mail">
       {!connected ? (
         <div className="flex flex-col items-center justify-center h-full gap-2">
           <div style={{ fontSize: 32 }}>✉️</div>
           <p style={{ fontSize: 13, color: 'rgba(235,235,245,0.5)', textAlign: 'center' }}>
-            Outlook / Microsoft 365
+            Forwarded mail
           </p>
           <p style={{ fontSize: 12, color: 'rgba(235,235,245,0.3)', textAlign: 'center' }}>
-            Connect Microsoft in Integrations ↙
+            Connect Google in Integrations ↙
+          </p>
+        </div>
+      ) : noLabel ? (
+        <div className="flex flex-col items-center justify-center h-full gap-2">
+          <div style={{ fontSize: 32 }}>🏷️</div>
+          <p style={{ fontSize: 13, color: 'rgba(235,235,245,0.5)', textAlign: 'center' }}>
+            Set a Gmail label
+          </p>
+          <p style={{ fontSize: 12, color: 'rgba(235,235,245,0.3)', textAlign: 'center', padding: '0 12px' }}>
+            Open Integrations ↙, enter the Gmail label name for your forwarded emails
           </p>
         </div>
       ) : (

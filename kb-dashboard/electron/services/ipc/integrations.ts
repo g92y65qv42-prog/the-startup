@@ -4,6 +4,7 @@ import {
   getGoogleConfig, saveGoogleConfig,
   isGoogleConnected, connectGoogle, disconnectGoogle,
   listCalendarEvents, listDocs,
+  listGmailMessages, saveGmailLabel, getGmailLabel,
 } from '../integrations/google'
 import {
   getMicrosoftConfig,
@@ -65,4 +66,12 @@ export function registerIntegrationsIpc(): void {
   ipcMain.handle(IPC.GOOGLE_CALENDAR_LIST, async () => listCalendarEvents())
   ipcMain.handle(IPC.GOOGLE_DOCS_LIST, async () => listDocs())
   ipcMain.handle(IPC.OUTLOOK_MESSAGES_LIST, async () => listOutlookMessages())
+
+  // Gmail
+  ipcMain.handle(IPC.GMAIL_MESSAGES_LIST, async () => listGmailMessages())
+  ipcMain.handle(IPC.GMAIL_LABEL_GET, async () => getGmailLabel())
+  ipcMain.handle(IPC.GMAIL_LABEL_SET, async (_e, label: string) => {
+    await saveGmailLabel(label)
+    return { ok: true }
+  })
 }

@@ -65,6 +65,11 @@ export const IPC = {
   // Outlook / Microsoft
   OUTLOOK_MESSAGES_LIST: 'outlook:messages-list',
 
+  // Gmail
+  GMAIL_MESSAGES_LIST: 'gmail:messages-list',
+  GMAIL_LABEL_GET: 'gmail:label-get',
+  GMAIL_LABEL_SET: 'gmail:label-set',
+
   // Shell
   OPEN_EXTERNAL: 'shell:open-external',
 } as const

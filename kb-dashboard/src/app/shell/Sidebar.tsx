@@ -26,12 +26,26 @@ function IntegrationsModal({ onClose }: { onClose: () => void }) {
   const [gClientSecret, setGClientSecret] = useState(config.google?.clientSecret ?? '')
   const [gConnecting, setGConnecting] = useState(false)
   const [gError, setGError] = useState<string | null>(null)
+  const [gmailLabel, setGmailLabel] = useState('')
+  const [gmailLabelSaved, setGmailLabelSaved] = useState(false)
 
   // Microsoft form state (IMAP — no Azure needed)
   const [mEmail, setMEmail] = useState(config.microsoft?.clientId ?? '')
   const [mAppPassword, setMAppPassword] = useState('')
   const [mConnecting, setMConnecting] = useState(false)
   const [mError, setMError] = useState<string | null>(null)
+
+  // Load current Gmail label when modal opens
+  useEffect(() => {
+    invoke<string | null>(IPC.GMAIL_LABEL_GET).then(l => { if (l) setGmailLabel(l) }).catch(() => {})
+  }, [])
+
+  async function saveGmailLabelSetting() {
+    if (!gmailLabel.trim()) return
+    await invoke(IPC.GMAIL_LABEL_SET, gmailLabel.trim())
+    setGmailLabelSaved(true)
+    setTimeout(() => setGmailLabelSaved(false), 2000)
+  }
 
   async function saveAndConnectGoogle() {
     if (!gClientId.trim() || !gClientSecret.trim()) {
@@ -155,13 +169,32 @@ function IntegrationsModal({ onClose }: { onClose: () => void }) {
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <span style={{ fontSize: 12, color: 'rgba(235,235,245,0.5)', flex: 1 }}>
-                Calendar + Docs access granted
-              </span>
-              <button onClick={disconnectGoogle} style={btnStyle('rgba(255,69,58,0.2)')}>
-                Disconnect
-              </button>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <span style={{ fontSize: 12, color: 'rgba(235,235,245,0.5)', flex: 1 }}>
+                  Calendar + Docs + Gmail access granted
+                </span>
+                <button onClick={disconnectGoogle} style={btnStyle('rgba(255,69,58,0.2)')}>
+                  Disconnect
+                </button>
+              </div>
+              <p style={{ fontSize: 11, color: 'rgba(235,235,245,0.4)', margin: '4px 0 2px', lineHeight: 1.5 }}>
+                Gmail label for forwarded Outlook emails (create a filter in Gmail first):
+              </p>
+              <div className="flex gap-2">
+                <input
+                  placeholder="e.g. Outlook"
+                  value={gmailLabel}
+                  onChange={e => setGmailLabel(e.target.value)}
+                  style={{ ...inputStyle, flex: 1 }}
+                />
+                <button
+                  onClick={saveGmailLabelSetting}
+                  style={{ ...btnStyle('#0A84FF'), width: 'auto', padding: '7px 12px', flexShrink: 0 }}
+                >
+                  {gmailLabelSaved ? '✓' : 'Save'}
+                </button>
+              </div>
             </div>
           )}
         </section>
