@@ -1,0 +1,77 @@
+import { ipcMain } from 'electron'
+import { IPC, IntegrationConfig, IntegrationStatus } from '../../../src/shared/ipc-channels'
+import {
+  getGoogleConfig, saveGoogleConfig,
+  isGoogleConnected, connectGoogle, disconnectGoogle,
+  listCalendarEvents, listDocs,
+  listGmailMessages, saveGmailLabel, getGmailLabel,
+} from '../integrations/google'
+import {
+  getMicrosoftConfig,
+  saveMicrosoftConfig,
+  isMicrosoftConnected, connectMicrosoft, disconnectMicrosoft,
+  listOutlookMessages,
+} from '../integrations/microsoft'
+
+export function registerIntegrationsIpc(): void {
+  // Status: are providers connected?
+  ipcMain.handle(IPC.INTEGRATION_STATUS, async (): Promise<IntegrationStatus> => ({
+    google: await isGoogleConnected(),
+    microsoft: await isMicrosoftConnected(),
+  }))
+
+  // Get stored config (email for microsoft, clientId for google)
+  ipcMain.handle(IPC.INTEGRATION_GET_CONFIG, async (): Promise<IntegrationConfig> => {
+    const google = getGoogleConfig()
+    const microsoft = await getMicrosoftConfig()
+    return { google, microsoft }
+  })
+
+  // Save credentials before connecting
+  ipcMain.handle(
+    IPC.INTEGRATION_SET_CONFIG,
+    async (_e, data: { provider: 'google' | 'microsoft'; clientId: string; clientSecret?: string }) => {
+      if (data.provider === 'google') {
+        saveGoogleConfig(data.clientId, data.clientSecret ?? '')
+      } else {
+        // clientId = email, clientSecret = app password
+        await saveMicrosoftConfig(data.clientId, data.clientSecret ?? '')
+      }
+      return { ok: true }
+    }
+  )
+
+  // OAuth flows — open system browser, complete PKCE, store tokens
+  ipcMain.handle(IPC.INTEGRATION_CONNECT_GOOGLE, async () => {
+    await connectGoogle()
+    return { ok: true }
+  })
+
+  ipcMain.handle(IPC.INTEGRATION_CONNECT_MICROSOFT, async () => {
+    await connectMicrosoft()
+    return { ok: true }
+  })
+
+  // Disconnect: wipe tokens from Keychain
+  ipcMain.handle(
+    IPC.INTEGRATION_DISCONNECT,
+    async (_e, provider: 'google' | 'microsoft') => {
+      if (provider === 'google') await disconnectGoogle()
+      else await disconnectMicrosoft()
+      return { ok: true }
+    }
+  )
+
+  // Data endpoints
+  ipcMain.handle(IPC.GOOGLE_CALENDAR_LIST, async () => listCalendarEvents())
+  ipcMain.handle(IPC.GOOGLE_DOCS_LIST, async () => listDocs())
+  ipcMain.handle(IPC.OUTLOOK_MESSAGES_LIST, async () => listOutlookMessages())
+
+  // Gmail
+  ipcMain.handle(IPC.GMAIL_MESSAGES_LIST, async () => listGmailMessages())
+  ipcMain.handle(IPC.GMAIL_LABEL_GET, async () => getGmailLabel())
+  ipcMain.handle(IPC.GMAIL_LABEL_SET, async (_e, label: string) => {
+    await saveGmailLabel(label)
+    return { ok: true }
+  })
+}
